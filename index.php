@@ -5,6 +5,9 @@ $LogPath = "./logs/php_bark_handler.log";
 $InfoMode = 1;
 $DebugMode = 1;
 
+$CaptchaKeyword = ["验证码","校验码","确认码","随机码","安全码"];
+
+// 根据开关参数的配置，按格式写入日志文件
 function log_info($msg) {
     if ($GLOBALS["InfoMode"] != "1") {
         return;
@@ -27,10 +30,7 @@ function log_error($msg) {
 
 // TODO // 处理微信消息，转换为短信格式
 function pre_process_json(&$jsonObj) {
-    print("pre_process_json\n");
-    // for($index = 1; $index < strlen($json); $index++) {
-    //     if 
-    // }
+    log_debug("pre_process_json\n");
     
     if ($jsonObj->smsrn == "" && $jsonObj->smsrf == "" && starts_with($jsonObj->smsrb, "【微信】")) {
         // 来自微信的消息
@@ -38,12 +38,11 @@ function pre_process_json(&$jsonObj) {
         $pos_1 = mb_strpos($totalMsg, ":");  // 找到第一个":"，定位发件人和消息的分界线
         $sender = mb_substr($totalMsg, 0, $pos_1);
         $msg = mb_substr($totalMsg, ($pos_1 + 2), (mb_strlen($totalMsg) - $pos_1 - 2));
-        // print("[".$sender."][".$msg."]\n");
+        
         $jsonObj->smsrn = "微信消息";
         $jsonObj->smsrf = $sender;
         $jsonObj->smsrb = $msg;
     }
-    // print($jsonObj->smsrn." ".$jsonObj->smsrf." ".$jsonObj->smsrb."\n");
 }
 
 // 保存到数据库
@@ -68,23 +67,39 @@ function add_to_database($jsonObj) {
     }
 }
 
-// TODO // 判断是否有验证码
+// 判断是否有验证码
 function has_captcha($msg) {
-    $has_captcha = false;
-
-
-    return $has_captcha;
+    global $CaptchaKeyword;
+    for ($wordIdx = 0; $wordIdx < count($CaptchaKeyword); $word++) {
+        $pattern = "/".$CaptchaKeyword[$wordIdx]."/";
+        if (preg_match($pattern, $msg) > 0) {
+            log_debug("Find Keyword![".$wordIdx."][".$CaptchaKeyword[$wordIdx]."]");
+            return true;
+        }
+    }
+    return false;
 }
 
-// TODO // 解析验证码，支持4-8位数字(todo)
+// 解析验证码，支持4-8位数字(todo)
 function get_captcha($msg) {
-    $captcha = "012345";
+    $patternBegin = "/(?<!\d)\d{";
+    $patternEnd = "}(?!\d)/";
+    $matches = array();
     
-    return $captcha;
+    for ($captchaIdx = 4; $captchaIdx <= 8; $captchaIdx++) {
+        $pattern = $patternBegin . $captchaIdx . $patternEnd;
+        if (preg_match($pattern, $msg, $matches) > 0) {
+            log_debug("Find captcha![".$captchaIdx."][".$matches[0]."]");
+            return $matches[0];
+        }
+    }
+    log_error("Could not find captcha![".$msg."]");
+    return "";
 }
 
-
+// 获取 Bark 推送需要的参数字符串
 function get_msg_json($reqObj, $hasCaptcha=false, $captcha="") {
+    log_debug("[get_msg_json()] hasCaptcha: ".$hasCaptcha." captcha: ".$captcha);
     $retObj = new StdClass();
     $msg = "收件人: ".$reqObj->smsrk."\n消息内容: ".$reqObj->smsrb."\n时间: ".$reqObj->smsrt;
 
@@ -100,12 +115,12 @@ function get_msg_json($reqObj, $hasCaptcha=false, $captcha="") {
     }
     $retObj->body = $msg;
 
-    if ($hasCaptcha && $code != "") {
+    if ($hasCaptcha && $captcha != "") {
         $retObj->automaticallyCopy = 1;
         $retObj->copy = $captcha;
+        $retObj->title = "验证码 ".$captcha;
     }
 
-    // var_dump($retObj);
     return base64_encode(json_encode($retObj));
 }
 
@@ -115,8 +130,9 @@ $clientObj = json_decode($clientJson);
 pre_process_json($clientObj);
 add_to_database($clientObj);
 
+// 用 base64 编码发送，避免引号传参问题
 $data_base64 = "";
-if (has_captcha($clientObj->smsrb) == true) {
+if ($clientObj->smsrn != "微信消息" && has_captcha($clientObj->smsrb) == true) {
     $data_base64 = get_msg_json($clientObj, true, get_captcha($clientObj->smsrb));
 } else {
     $data_base64 = get_msg_json($clientObj);
@@ -125,6 +141,11 @@ if (has_captcha($clientObj->smsrb) == true) {
 $command = "python bark_push_json.py ".$data_base64." >> ./logs/python_log.log";
 log_info("Py command: ".$command);
 exec($command);
+log_info("====================");
 
+
+// for($index = 1; $index < strlen($json); $index++) {
+//     if 
+// }
   
 ?>

@@ -1,10 +1,12 @@
 <?php
 
+// 判断字符串参数1是否以字符串参数2开头
 function starts_with($haystack, $needle) {
      $length = strlen($needle);
      return (substr($haystack, 0, $length) === $needle);
 }
 
+// 判断字符串参数1是否以字符串参数2结尾
 function ends_with($haystack, $needle) {
     $length = strlen($needle);
     if ($length == 0) {
@@ -14,6 +16,7 @@ function ends_with($haystack, $needle) {
     return (substr($haystack, -$length) === $needle);
 }
 
+// 根据传入的参数，获取到数据库的连接  // 使用后需手动关闭连接
 function get_mysql_conn($host, $uname, $pwd, $dbname) {
     try{
         //对mysqli类进行实例化
@@ -30,8 +33,6 @@ function get_mysql_conn($host, $uname, $pwd, $dbname) {
     }
 }
 
-
-
 //返回当前的毫秒时间戳
 function get_msectime() {
     list($msec, $sec) = explode(" ", microtime());
@@ -39,9 +40,8 @@ function get_msectime() {
     return $msectime;
 }
     
-/** 
- *时间戳 转   日期格式 ： 精确到毫秒，x代表毫秒
-*/
+
+// 将时间戳转换为格式化日期  // 精确到毫秒，小数点后三位代表毫秒
 function get_microtime_format($time)
 {
     if(strstr($time,'.')) {
@@ -56,9 +56,7 @@ function get_microtime_format($time)
     return str_replace('x', $sec, $date);
 }
 
-/** 时间日期转时间戳格式，精确到毫秒，
- *     
-*/
+// 将格式化日期转换为时间戳，精确到毫秒
 function get_data_format($time)
 {
     list($usec, $sec) = explode(".", $time);
