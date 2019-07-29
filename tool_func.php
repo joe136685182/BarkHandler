@@ -12,23 +12,20 @@ function ends_with($haystack, $needle) {
     if ($length == 0) {
         return false;
     }
-
     return (substr($haystack, -$length) === $needle);
 }
 
 // 根据传入的参数，获取到数据库的连接  // 使用后需手动关闭连接
 function get_mysql_conn($host, $uname, $pwd, $dbname) {
     try{
-        //对mysqli类进行实例化
         $mysqli = new mysqli($host, $uname, $pwd, $dbname);
-        if(mysqli_connect_errno()){    //判断是否成功连接上MySQL数据库
-            throw new Exception("数据库连接错误！\n");  //如果连接错误，则抛出异常
-        }else{
-            echo "数据库连接成功！\n";   //打印连接成功的提示
+        if (mysqli_connect_errno()) {
+            throw new Exception("数据库连接错误！\n");  //连接错误，抛出异常
+        } else {
             return $mysqli;
         }
-    }catch (Exception $e){        //捕获异常
-        echo $e->getMessage()."\n";    //打印异常信息
+    } catch (Exception $e) {
+        echo $e->getMessage()."\n";
         return null;
     }
 }
@@ -68,8 +65,7 @@ function get_data_format($time)
 // 按格式记录日志到文件
 function log_file($path, $level, $msg) {
     $file = fopen($path, "a") or exit("Unable to open file! [".$path."]\n");
-    $msecTime = get_msectime();
-    $formatTime = get_microtime_format($msecTime * 0.001);
+    $formatTime = get_microtime_format(get_msectime() * 0.001);
     $logMsg = "[".$formatTime."][".$level."] ".$msg."\n";
     fwrite($file, $logMsg);
     fclose($file);
@@ -80,7 +76,6 @@ function log_file($path, $level, $msg) {
 function array_to_string($array, $layout=0) {
     $strArray = "";
     foreach ($array as $key => $value) {
-        // echo "Key=".$key." Value=".$value."\n";
         $strArray = $strArray.str_repeat("  ", $layout)."[".$key."] => ";
         if (is_array($value)) {
             $strArray = $strArray."[\n".array_to_string($value, $layout+1)."]\n";
