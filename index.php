@@ -175,10 +175,4 @@ if ($SendNotification == "1") {
 
 log_debug("====================");
 log_info("====================");
-
-
-// for($index = 1; $index < strlen($json); $index++) {
-//     if 
-// }
-  
 ?>
