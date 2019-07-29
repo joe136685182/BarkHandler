@@ -1,36 +1,47 @@
 <?php
 
 require_once("tool_func.php");
-$LogPath = "./logs/php_bark_handler.log";
-$InfoMode = 1;
-$DebugMode = 1;
+// 加载配置文件
+$MainConfig = parse_ini_file("config.ini", true);
 
-$CaptchaKeyword = ["验证码","校验码","确认码","随机码","安全码"];
+$ServerConfig = $MainConfig["BarkServerConfig"];  // 控制服务端的某些配置
+$SqlConfig = $MainConfig["BarkSqlConfig"];  // 控制数据库相关的配置
+$LogConfig = $MainConfig["BarkLogConfig"];  // 控制日志相关的配置
+
+$CaptchaKeyword = explode(",", $ServerConfig["CaptchaKeyWord"]);
+$TestMsgSender = explode(",", $ServerConfig["TestMsgSender"]);
+$SendNotification = $ServerConfig["SendNotification"];
 
 // 根据开关参数的配置，按格式写入日志文件
 function log_info($msg) {
-    if ($GLOBALS["InfoMode"] != "1") {
+    global $LogConfig;
+    if ($LogConfig["InfoMode"] != "1") {
         return;
     }
-    log_file($GLOBALS["LogPath"], "INFO", $msg);
+    log_file($LogConfig["InfoLogFile"], "INFO", $msg);
 }
 
 function log_debug($msg) {
-    if ($GLOBALS["DebugMode"] != "1") {
+    global $LogConfig;
+    if ($LogConfig["DebugMode"] != "1") {
         return;
     }
-    log_file($GLOBALS["LogPath"], "DEBUG", $msg);
+    log_file($LogConfig["DebugLogFile"], "DEBUG", $msg);
 }
 
 function log_error($msg) {
-    log_file($GLOBALS["LogPath"], "ERROR", $msg);
+    global $LogConfig;
+    if ($LogConfig["ErrorMode"] != "1") {
+        return;
+    }
+    log_file($LogConfig["ErrorLogFile"], "Error", $msg);
 }
 
 // =========================================
 
-// TODO // 处理微信消息，转换为短信格式
+// 处理微信消息，转换为短信格式
 function pre_process_json(&$jsonObj) {
-    log_debug("pre_process_json\n");
+    log_debug("pre_process_json");
     
     if ($jsonObj->smsrn == "" && $jsonObj->smsrf == "" && starts_with($jsonObj->smsrb, "【微信】")) {
         // 来自微信的消息
@@ -47,12 +58,17 @@ function pre_process_json(&$jsonObj) {
 
 // 保存到数据库
 function add_to_database($jsonObj) {
-    $conn = get_mysql_conn("localhost", "barkadmin", "k0f8bic", "BarkMessage");
+    global $TestMsgSender, $SqlConfig;
+    log_debug("add_to_database() => ".array_to_string($TestMsgSender));
+    $conn = get_mysql_conn($SqlConfig["Host"], $SqlConfig["Username"], $SqlConfig["Password"], $SqlConfig["DBname"]);
     if ($conn) {
-        $tableName = "MsmMsg";
-        if ($jsonObj->smsrf == "9999" || $jsonObj->smsrf == "双卡助手") {  // 测试消息写入测试库
+        $tableName = "";
+        if (in_array($jsonObj->smsrf, $TestMsgSender)) {  // 测试消息写入测试库
             log_debug("收到测试消息，写入测试库！[".$jsonObj->smsrf."]");
-            $tableName = "MsmMsg_1";
+            $tableName = $SqlConfig["TBNameT"];
+        } else {
+
+            $tableName = $SqlConfig["TBName"];
         }
         
         $sql = "INSERT INTO ".$tableName." (smsrn, smsrf, smsrc, smsrk, smsrb, smsrt) VALUES (\"".$jsonObj->smsrn."\", \"".$jsonObj->smsrf."\", \"".$jsonObj->smsrc."\", \"".$jsonObj->smsrk."\", \"".$jsonObj->smsrb."\", \"".$jsonObj->smsrt."\")";
@@ -69,19 +85,26 @@ function add_to_database($jsonObj) {
 
 // 判断是否有验证码
 function has_captcha($msg) {
+    log_debug("has_captcha(".$msg.")");
     global $CaptchaKeyword;
-    for ($wordIdx = 0; $wordIdx < count($CaptchaKeyword); $word++) {
+    for ($wordIdx = 0; $wordIdx < count($CaptchaKeyword); $wordIdx++) {
         $pattern = "/".$CaptchaKeyword[$wordIdx]."/";
+        log_debug("[".$wordIdx."]CaptchaKeyword[".$wordIdx."] = ".$pattern);
         if (preg_match($pattern, $msg) > 0) {
-            log_debug("Find Keyword![".$wordIdx."][".$CaptchaKeyword[$wordIdx]."]");
+            log_debug("Find keyword![".$wordIdx."][".$CaptchaKeyword[$wordIdx]."]");
             return true;
+        } else {
+            log_debug("Didn't find in round ".($wordIdx + 1));
         }
     }
+    log_debug("Didn't find keyword.");
     return false;
 }
 
-// 解析验证码，支持4-8位数字(todo)
+// 解析验证码，支持4-8位数字
 function get_captcha($msg) {
+    log_debug("get_captcha(".$msg.")");
+
     $patternBegin = "/(?<!\d)\d{";
     $patternEnd = "}(?!\d)/";
     $matches = array();
@@ -125,6 +148,7 @@ function get_msg_json($reqObj, $hasCaptcha=false, $captcha="") {
 }
 
 $clientJson = file_get_contents('php://input');
+log_debug("Request json = [".$clientJson."]");
 $clientObj = json_decode($clientJson);
 
 pre_process_json($clientObj);
@@ -138,9 +162,18 @@ if ($clientObj->smsrn != "微信消息" && has_captcha($clientObj->smsrb) == tru
     $data_base64 = get_msg_json($clientObj);
 }
 
-$command = "python bark_push_json.py ".$data_base64." >> ./logs/python_log.log";
+$command = "python bark_push_json.py ".$data_base64." >> ".$LogConfig["PyDebugLogFile"];
 log_info("Py command: ".$command);
-exec($command);
+
+if ($SendNotification == "1") {
+    exec($command);
+}
+
+// 测试 config.ini 文件
+// $config = array_to_string($MainConfig);
+// log_debug("加载了如下配置文件:\n".$config);
+
+log_debug("====================");
 log_info("====================");
 
 
