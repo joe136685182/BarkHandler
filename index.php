@@ -41,10 +41,7 @@ function log_error($msg) {
 
 // 处理微信消息，转换为短信格式
 function pre_process_json(&$jsonObj) {
-    log_debug("pre_process_json");
-    
-    if ($jsonObj->smsrn == "" && $jsonObj->smsrf == "" && starts_with($jsonObj->smsrb, "【微信】")) {
-        // 来自微信的消息
+    if ($jsonObj->smsrn == "" && $jsonObj->smsrf == "" && starts_with($jsonObj->smsrb, "【微信】")) {  // 来自微信的消息
         $totalMsg = mb_substr($jsonObj->smsrb, mb_strlen("【微信】", 'utf8'));  // 已经去掉了"【微信】"
         $pos_1 = mb_strpos($totalMsg, ":");  // 找到第一个":"，定位发件人和消息的分界线
         $sender = mb_substr($totalMsg, 0, $pos_1);
@@ -59,7 +56,7 @@ function pre_process_json(&$jsonObj) {
 // 保存到数据库
 function add_to_database($jsonObj) {
     global $TestMsgSender, $SqlConfig;
-    log_debug("add_to_database() => ".array_to_string($TestMsgSender));
+    // log_debug("add_to_database() => ".array_to_string($TestMsgSender));
     $conn = get_mysql_conn($SqlConfig["Host"], $SqlConfig["Username"], $SqlConfig["Password"], $SqlConfig["DBname"]);
     if ($conn) {
         $tableName = "";
@@ -85,7 +82,7 @@ function add_to_database($jsonObj) {
 
 // 判断是否有验证码
 function has_captcha($msg) {
-    log_debug("has_captcha(".$msg.")");
+    // log_debug("has_captcha(".$msg.")");
     global $CaptchaKeyword;
     for ($wordIdx = 0; $wordIdx < count($CaptchaKeyword); $wordIdx++) {
         $pattern = "/".$CaptchaKeyword[$wordIdx]."/";
