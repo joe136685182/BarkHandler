@@ -76,4 +76,19 @@ function log_file($path, $level, $msg) {
     return;
 }
 
+// 将多维数组转化为字符串以便打印
+function array_to_string($array, $layout=0) {
+    $strArray = "";
+    foreach ($array as $key => $value) {
+        // echo "Key=".$key." Value=".$value."\n";
+        $strArray = $strArray.str_repeat("  ", $layout)."[".$key."] => ";
+        if (is_array($value)) {
+            $strArray = $strArray."[\n".array_to_string($value, $layout+1)."]\n";
+        } else {
+            $strArray = $strArray.$value."\n";
+        }
+    }	
+    return $strArray;
+}
+
 ?>
