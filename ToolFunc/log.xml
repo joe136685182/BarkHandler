@@ -1,0 +1,22 @@
+<!--?xml version=”1.0″ encoding=”UTF-8″?-->
+<log>
+    <BarkServer>
+        <Debug>
+            <LevelTag>DEBUG</LevelTag>
+            <Mode>1</Mode>
+            <LogFile>./logs/php_bark_handler__debug.log</LogFile>
+        </Debug>
+
+        <Info>
+            <LevelTag>INFO</LevelTag>
+            <Mode>1</Mode>
+            <LogFile>./logs/php_bark_handler__info.log</LogFile>
+        </Info>
+
+        <Error>
+            <LevelTag>ERROR</LevelTag>
+            <Mode>1</Mode>
+            <LogFile>./logs/php_bark_handler__error.log</LogFile>
+        </Error>
+    </BarkServer>
+</log>
