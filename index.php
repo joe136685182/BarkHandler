@@ -1,52 +1,48 @@
 <?php
 
-require_once("tool_func.php");
+class ServerConf
+{
+    static $Conf = array();
+
+    static function init()
+    {
+        try {
+            $settings = new Settings_INI;
+            $path = __DIR__ . "/config.ini";
+            if (!$settings->load($path)) {
+                throw new Exception("Load INI error!\n");
+            }
+            ServerConf::$Conf = $settings;
+            return true;
+        } catch (Exception $e) {
+            echo $e->getMessage() . "\n";
+            return false;
+        }
+    }
+}
+
+require_once("ToolFunc/tool_func.php");
+require_once("ToolFunc/logs.php");
+
+// 初始化日志服务
+if (!Logs::init("BarkServer")) {
+    throw new Exception("Init log module failed!\n");
+}
+
 // 加载配置文件
-$MainConfig = parse_ini_file("config.ini", true);
-
-$ServerConfig = $MainConfig["BarkServerConfig"];  // 控制服务端的某些配置
-$SqlConfig = $MainConfig["BarkSqlConfig"];  // 控制数据库相关的配置
-$LogConfig = $MainConfig["BarkLogConfig"];  // 控制日志相关的配置
-
-$CaptchaKeyword = explode(",", $ServerConfig["CaptchaKeyWord"]);
-$TestMsgSender = explode(",", $ServerConfig["TestMsgSender"]);
-$SendNotification = $ServerConfig["SendNotification"];
-
-// 根据开关参数的配置，按格式写入日志文件
-function log_info($msg) {
-    global $LogConfig;
-    if ($LogConfig["InfoMode"] != "1") {
-        return;
-    }
-    log_file($LogConfig["InfoLogFile"], "INFO", $msg);
+if (!ServerConf::init()) {
+    throw new Exception("Init config module failed!\n");
 }
 
-function log_debug($msg) {
-    global $LogConfig;
-    if ($LogConfig["DebugMode"] != "1") {
-        return;
-    }
-    log_file($LogConfig["DebugLogFile"], "DEBUG", $msg);
-}
-
-function log_error($msg) {
-    global $LogConfig;
-    if ($LogConfig["ErrorMode"] != "1") {
-        return;
-    }
-    log_file($LogConfig["ErrorLogFile"], "Error", $msg);
-}
-
-// =========================================
-
-// 处理微信消息，转换为短信格式
-function pre_process_json(&$jsonObj) {
+// 处理微信消息，转换为短信格式  // TODO: 过滤掉一些无用的信息，如微信提示
+function pre_process_json(&$jsonObj)
+{
     if ($jsonObj->smsrn == "" && $jsonObj->smsrf == "" && starts_with($jsonObj->smsrb, "【微信】")) {  // 来自微信的消息
         $totalMsg = mb_substr($jsonObj->smsrb, mb_strlen("【微信】", 'utf8'));  // 已经去掉了"【微信】"
         $pos_1 = mb_strpos($totalMsg, ":");  // 找到第一个":"，定位发件人和消息的分界线
         $sender = mb_substr($totalMsg, 0, $pos_1);
         $msg = mb_substr($totalMsg, ($pos_1 + 2), (mb_strlen($totalMsg) - $pos_1 - 2));
-        
+
         $jsonObj->smsrn = "微信消息";
         $jsonObj->smsrf = $sender;
         $jsonObj->smsrb = $msg;
@@ -54,26 +50,28 @@ function pre_process_json(&$jsonObj) {
 }
 
 // 保存到数据库
-function add_to_database($jsonObj) {
-    global $TestMsgSender, $SqlConfig;
-    // log_debug("add_to_database() => ".array_to_string($TestMsgSender));
-    $conn = get_mysql_conn($SqlConfig["Host"], $SqlConfig["Username"], $SqlConfig["Password"], $SqlConfig["DBname"]);
+function add_to_database($jsonObj)
+{
+    $sqlConfig = ServerConf::$Conf->get("BarkSqlConfig");
+    $testMsgSender = explode(",", ServerConf::$Conf->get("BarkServerConfig.TestMsgSender"));
+
+    $conn = get_mysql_conn($sqlConfig["Host"], $sqlConfig["Username"], $sqlConfig["Password"], $sqlConfig["DBname"]);
     if ($conn) {
         $tableName = "";
-        if (in_array($jsonObj->smsrf, $TestMsgSender)) {  // 测试消息写入测试库
-            log_debug("收到测试消息，写入测试库！[".$jsonObj->smsrf."]");
-            $tableName = $SqlConfig["TBNameT"];
+        if (in_array($jsonObj->smsrf, $testMsgSender)) {  // 测试消息写入测试库
+            Logs::debug("收到测试消息，写入测试库！[" . $jsonObj->smsrf . "]");
+            $tableName = $sqlConfig["TBNameT"];
         } else {
 
-            $tableName = $SqlConfig["TBName"];
+            $tableName = $sqlConfig["TBName"];
         }
-        
-        $sql = "INSERT INTO ".$tableName." (smsrn, smsrf, smsrc, smsrk, smsrb, smsrt) VALUES (\"".$jsonObj->smsrn."\", \"".$jsonObj->smsrf."\", \"".$jsonObj->smsrc."\", \"".$jsonObj->smsrk."\", \"".$jsonObj->smsrb."\", \"".$jsonObj->smsrt."\")";
-        log_debug("Insert SQL: ".$sql);
+
+        $sql = "INSERT INTO " . $tableName . " (smsrn, smsrf, smsrc, smsrk, smsrb, smsrt) VALUES (\"" . $jsonObj->smsrn . "\", \"" . $jsonObj->smsrf . "\", \"" . $jsonObj->smsrc . "\", \"" . $jsonObj->smsrk . "\", \"" . $jsonObj->smsrb . "\", \"" . $jsonObj->smsrt . "\")";
+        Logs::debug("Insert SQL: " . $sql);
         if ($conn->query($sql) === TRUE) {
-            log_debug("新记录插入成功!");
+            Logs::debug("新记录插入成功!");
         } else {
-            log_error("Query failed! SQL: ".$sql." ErrorMsg: ".$conn->error);
+            Logs::error("Query failed! SQL: " . $sql . " ErrorMsg: " . $conn->error);
         }
 
         $conn->close();
@@ -81,95 +79,106 @@ function add_to_database($jsonObj) {
 }
 
 // 判断是否有验证码
-function has_captcha($msg) {
-    // log_debug("has_captcha(".$msg.")");
-    global $CaptchaKeyword;
-    for ($wordIdx = 0; $wordIdx < count($CaptchaKeyword); $wordIdx++) {
-        $pattern = "/".$CaptchaKeyword[$wordIdx]."/";
-        log_debug("[".$wordIdx."]CaptchaKeyword[".$wordIdx."] = ".$pattern);
+function has_captcha($msg)
+{
+    $captchaKeyword = explode(",", ServerConf::$Conf->get("BarkServerConfig.CaptchaKeyWord"));
+
+    for ($wordIdx = 0; $wordIdx < count($captchaKeyword); $wordIdx++) {
+        $pattern = "/" . $captchaKeyword[$wordIdx] . "/";
+        Logs::debug("CaptchaKeyword[" . $wordIdx . "] = " . $pattern);
         if (preg_match($pattern, $msg) > 0) {
-            log_debug("Find keyword![".$wordIdx."][".$CaptchaKeyword[$wordIdx]."]");
+            Logs::debug("Find keyword![" . $wordIdx . "][" . $captchaKeyword[$wordIdx] . "]");
             return true;
         } else {
-            log_debug("Didn't find in round ".($wordIdx + 1));
+            Logs::debug("Didn't find in round " . ($wordIdx + 1));
         }
     }
-    log_debug("Didn't find keyword.");
+    Logs::debug("Didn't find keyword.");
     return false;
 }
 
 // 解析验证码，支持4-8位数字
-function get_captcha($msg) {
-    log_debug("get_captcha(".$msg.")");
+function get_captcha($msg)
+{
+    Logs::debug("get_captcha(" . $msg . ")");
 
     $patternBegin = "/(?<!\d)\d{";
     $patternEnd = "}(?!\d)/";
     $matches = array();
-    
+
     for ($captchaIdx = 4; $captchaIdx <= 8; $captchaIdx++) {
         $pattern = $patternBegin . $captchaIdx . $patternEnd;
         if (preg_match($pattern, $msg, $matches) > 0) {
-            log_debug("Find captcha![".$captchaIdx."][".$matches[0]."]");
+            Logs::debug("Find captcha![" . $captchaIdx . "][" . $matches[0] . "]");
             return $matches[0];
         }
     }
-    log_error("Could not find captcha![".$msg."]");
+    Logs::error("Could not find captcha![" . $msg . "]");
     return "";
 }
 
-// 获取 Bark 推送需要的参数字符串
-function get_msg_json($reqObj, $hasCaptcha=false, $captcha="") {
-    log_debug("[get_msg_json()] hasCaptcha: ".$hasCaptcha." captcha: ".$captcha);
-    $retObj = new StdClass();
-    $msg = "收件人: ".$reqObj->smsrk."\n消息内容: ".$reqObj->smsrb."\n时间: ".$reqObj->smsrt;
+// 获取 Bark 推送需要的参数
+function get_post_data($reqObj, &$reqData, $hasCaptcha = false, $captcha = "")
+{
+    Logs::debug("[get_msg_json()] hasCaptcha: " . $hasCaptcha . " captcha: " . $captcha);
+    $msg = "收件人: " . $reqObj->smsrk . "\n消息内容: " . $reqObj->smsrb . "\n时间: " . $reqObj->smsrt;
 
     if ($reqObj->smsrn == "") {
         if ($reqObj->smsrf != "") {
-            $retObj->title = $reqObj->smsrf;  // 若无发件人名称且有发件人号码，则标题为发件人号码
+            $reqData["title"] = $reqObj->smsrf;  // 若无发件人名称且有发件人号码，则标题为发件人号码
         }  // 若无发件人名称及号码，则无标题
     } else {
-        $retObj->title = $reqObj->smsrn;  // 若有发件人名称，则标题为发件人号码
+        $reqData["title"] = $reqObj->smsrn;  // 若有发件人名称，则标题为发件人号码
         if ($reqObj->smsrf != "") {  // 若有发件人号码，则在正文中插入该项内容
-            $msg = "发件人号码: ".$reqObj->smsrf."\n".$msg;
+            $msg = "发件人号码: " . $reqObj->smsrf . "\n" . $msg;
         }
     }
-    $retObj->body = $msg;
+    $reqData["body"] = $msg;
 
     if ($hasCaptcha && $captcha != "") {
-        $retObj->automaticallyCopy = 1;
-        $retObj->copy = $captcha;
-        $retObj->title = "验证码 ".$captcha;
+        $reqData["automaticallyCopy"] = 1;
+        $reqData["copy"] = $captcha;
+        $reqData["title"] = "验证码 " . $captcha;
     }
+}
 
-    return base64_encode(json_encode($retObj));
+// 发送 POST 请求
+function send_post($url, $postData)
+{
+    $postData = http_build_query($postData);
+    $options = array(
+        'http' => array(
+            'method' => 'POST',
+            'header' => 'Content-type:application/x-www-form-urlencoded',
+            'content' => $postData,
+            'timeout' => 60 // 超时时间（单位:s）
+        )
+    );
+    $context = stream_context_create($options);
+    $result = file_get_contents($url, false, $context);
+    return $result;
 }
 
 $clientJson = file_get_contents('php://input');
-log_debug("Request json = [".$clientJson."]");
+Logs::info("Request json = [" . $clientJson . "]");
 $clientObj = json_decode($clientJson);
 
 pre_process_json($clientObj);
 add_to_database($clientObj);
 
-// 用 base64 编码发送，避免引号传参问题
-$data_base64 = "";
+$req_data = array();
 if ($clientObj->smsrn != "微信消息" && has_captcha($clientObj->smsrb) == true) {
-    $data_base64 = get_msg_json($clientObj, true, get_captcha($clientObj->smsrb));
+    get_post_data($clientObj, $req_data, true, get_captcha($clientObj->smsrb));
 } else {
-    $data_base64 = get_msg_json($clientObj);
+    get_post_data($clientObj, $req_data);
 }
 
-$command = "python bark_push_json.py ".$data_base64." >> ".$LogConfig["PyDebugLogFile"];
-log_info("Py command: ".$command);
-
-if ($SendNotification == "1") {
-    exec($command);
+if (ServerConf::$Conf->get("BarkServerConfig.SendNotification") == "1") {
+    $url = ServerConf::$Conf->get("BarkServerConfig.ServerUrl") . "/" . ServerConf::$Conf->get("BarkServerConfig.DeviceKey") . "/";
+    $ret = send_post($url, $req_data);
+    Logs::info("Sent. Ret: [".$ret."]");
 }
+Logs::debug("====================");
+Logs::info("====================");
 
-// 测试 config.ini 文件
-// $config = array_to_string($MainConfig);
-// log_debug("加载了如下配置文件:\n".$config);
-
-log_debug("====================");
-log_info("====================");
 ?>
