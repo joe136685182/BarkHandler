@@ -75,4 +75,25 @@ class Settings_XML extends Settings
     }
 }
 
+class ServerConf
+{
+    static $Conf = array();
+
+    static function init()
+    {
+        try {
+            $settings = new Settings_INI;
+            $path = __DIR__ . "/config.ini";
+            if (!$settings->load($path)) {
+                throw new Exception("Load INI error!\n");
+            }
+            ServerConf::$Conf = $settings;
+            return true;
+        } catch (Exception $e) {
+            echo $e->getMessage() . "\n";
+            return false;
+        }
+    }
+}
+
 ?>
