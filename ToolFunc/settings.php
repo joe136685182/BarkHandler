@@ -28,7 +28,6 @@ class Settings_INI extends Settings
 
     function load($file)
     {
-        // $path = dirname(__FILE__)."/".$file;
         if (is_file($file) == false) {
             echo "Can't find file [".$file."]\n";
             return false;
@@ -58,11 +57,10 @@ class Settings_XML extends Settings
     }
 
     /**
-     * $file: 需要使用相对路径（相对settings.php文件的路径），否则会找不到文件
+     * $file: 最好使用绝u第路径，否则会找不到文件
      */
     function load($file)
     {
-        // $path = dirname(__FILE__)."/".$file;
         if (is_file($file) == false) {
             echo "Can't find file [".$file."]\n";
             return false;
@@ -79,12 +77,11 @@ class ServerConf
 {
     static $Conf = array();
 
-    static function init()
+    static function init($file)
     {
         try {
             $settings = new Settings_INI;
-            $path = __DIR__ . "/config.ini";
-            if (!$settings->load($path)) {
+            if (!$settings->load($file)) {
                 throw new Exception("Load INI error!\n");
             }
             ServerConf::$Conf = $settings;

@@ -9,7 +9,8 @@ if (!Logs::init("BarkServer")) {
 }
 
 // 加载配置文件
-if (!ServerConf::init()) {
+$path = __DIR__ . "/config.ini";
+if (!ServerConf::init($path)) {
     throw new Exception("Init config module failed!\n");
 }
 
