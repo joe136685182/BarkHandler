@@ -1,3 +1,9 @@
 .DS_Store
 /logs
 /admin
+
+/ToolFunc/*
+!/ToolFunc/log.xml
+!/ToolFunc/logs.php
+!/ToolFunc/settings.php
+!/ToolFunc/tool_func.php
