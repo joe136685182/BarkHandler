@@ -86,4 +86,21 @@ function array_to_string($array, $layout=0) {
     return $strArray;
 }
 
+// 发送 POST 请求
+function send_post($url, $postData)
+{
+    $postData = http_build_query($postData);
+    $options = array(
+        'http' => array(
+            'method' => 'POST',
+            'header' => 'Content-type:application/x-www-form-urlencoded',
+            'content' => $postData,
+            'timeout' => 60 // 超时时间（单位:s）
+        )
+    );
+    $context = stream_context_create($options);
+    $result = file_get_contents($url, false, $context);
+    return $result;
+}
+
 ?>

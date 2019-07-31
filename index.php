@@ -18,15 +18,42 @@ if (!ServerConf::init($path)) {
 function pre_process_json(&$jsonObj)
 {
     if ($jsonObj->smsrn == "" && $jsonObj->smsrf == "" && starts_with($jsonObj->smsrb, "【微信】")) {  // 来自微信的消息
-        $totalMsg = mb_substr($jsonObj->smsrb, mb_strlen("【微信】", 'utf8'));  // 已经去掉了"【微信】"
-        $pos_1 = mb_strpos($totalMsg, ":");  // 找到第一个":"，定位发件人和消息的分界线
-        $sender = mb_substr($totalMsg, 0, $pos_1);
-        $msg = mb_substr($totalMsg, ($pos_1 + 2), (mb_strlen($totalMsg) - $pos_1 - 2));
+        $totalMsg = mb_substr($jsonObj->smsrb, mb_strlen("【微信】", 'utf8'));  // 截掉"【微信】"
 
+        // 如果找不到目标字符(串)，则mb_strpos()会返回空字符串
+        $pos_1 = mb_strpos($totalMsg, "：");  // 微信系统消息的发件人和消息内容分隔符是全角冒号
+        $pos_2 = mb_strpos($totalMsg, ":");  // 普通消息的消息分隔符是半角冒号
+
+        $cord_1 = $pos_1 != "" && $pos_2 != "" && $pos_1 < $pos_2;  // 两种冒号都有且全角在半角前
+        $cord_2 = $pos_1 != "" && $pos_2 == "";  // 只有全角冒号
+
+        if ($cord_1 || $cord_2) {  // 系统消息
+            $sender = mb_substr($totalMsg, 0, $pos_1);
+            $msg = mb_substr($totalMsg, ($pos_1 + 1), (mb_strlen($totalMsg) - $pos_1 - 1));
+        } else {
+            $sender = mb_substr($totalMsg, 0, $pos_2);
+            $msg = mb_substr($totalMsg, ($pos_2 + 2), (mb_strlen($totalMsg) - $pos_2 - 2));
+        }
         $jsonObj->smsrn = "微信消息";
         $jsonObj->smsrf = $sender;
         $jsonObj->smsrb = $msg;
     }
+}
+
+// 判断是否为屏蔽的微信系统信息
+function wechat_ignore($jsonObj)
+{
+    $wechatIgnore = explode(",", ServerConf::$Conf->get("BarkServerConfig.WechatIgnore"));
+    Logs::debug("<wechat_ignore> name[" . $jsonObj->smsrn . "] sender[" . $jsonObj->smsrf . "] message[" . $jsonObj->smsrb . "]");
+
+    if ($jsonObj->smsrn == "微信消息" && $jsonObj->smsrf == "微信") {  // 经过 pre_process_json() 处理后的微信系统消息特征
+        // Logs::debug("<wechat_ignore> Match step one!");
+        if (in_array($jsonObj->smsrb, $wechatIgnore)) {
+            // Logs::debug("<wechat_ignore> Wechat system msg matched.");
+            return true;
+        }
+    }
+    return false;
 }
 
 // 保存到数据库
@@ -47,11 +74,11 @@ function add_to_database($jsonObj)
         }
 
         $sql = "INSERT INTO " . $tableName . " (smsrn, smsrf, smsrc, smsrk, smsrb, smsrt) VALUES (\"" . $jsonObj->smsrn . "\", \"" . $jsonObj->smsrf . "\", \"" . $jsonObj->smsrc . "\", \"" . $jsonObj->smsrk . "\", \"" . $jsonObj->smsrb . "\", \"" . $jsonObj->smsrt . "\")";
-        Logs::debug("Insert SQL: " . $sql);
+        Logs::debug("<add_to_database> sql[" . $sql . "]");
         if ($conn->query($sql) === TRUE) {
-            Logs::debug("新记录插入成功!");
+            Logs::debug("<add_to_database> 新记录插入成功!");
         } else {
-            Logs::error("Query failed! SQL: " . $sql . " ErrorMsg: " . $conn->error);
+            Logs::error("<add_to_database> Query failed! sql[" . $sql . "] ErrorMsg[" . $conn->error . "]");
         }
 
         $conn->close();
@@ -86,7 +113,7 @@ function get_captcha($msg)
     $patternEnd = "}(?!\d)/";
     $matches = array();
 
-    for ($captchaIdx = 4; $captchaIdx <= 8; $captchaIdx++) {
+    for ($captchaIdx = 8; $captchaIdx >= 4; $captchaIdx--) {
         $pattern = $patternBegin . $captchaIdx . $patternEnd;
         if (preg_match($pattern, $msg, $matches) > 0) {
             Logs::debug("Find captcha![" . $captchaIdx . "][" . $matches[0] . "]");
@@ -100,7 +127,7 @@ function get_captcha($msg)
 // 获取 Bark 推送需要的参数
 function get_post_data($reqObj, &$reqData, $hasCaptcha = false, $captcha = "")
 {
-    Logs::debug("[get_msg_json()] hasCaptcha: " . $hasCaptcha . " captcha: " . $captcha);
+    Logs::debug("<get_post_data> hasCaptcha[" . $hasCaptcha . "] captcha[" . $captcha . "]");
     $msg = "收件人: " . $reqObj->smsrk . "\n消息内容: " . $reqObj->smsrb . "\n时间: " . $reqObj->smsrt;
 
     if ($reqObj->smsrn == "") {
@@ -122,43 +149,38 @@ function get_post_data($reqObj, &$reqData, $hasCaptcha = false, $captcha = "")
     }
 }
 
-// 发送 POST 请求
-function send_post($url, $postData)
+function main()
 {
-    $postData = http_build_query($postData);
-    $options = array(
-        'http' => array(
-            'method' => 'POST',
-            'header' => 'Content-type:application/x-www-form-urlencoded',
-            'content' => $postData,
-            'timeout' => 60 // 超时时间（单位:s）
-        )
-    );
-    $context = stream_context_create($options);
-    $result = file_get_contents($url, false, $context);
-    return $result;
+    $clientJson = file_get_contents('php://input');
+    Logs::info("Request json = [" . $clientJson . "]");
+    $clientObj = json_decode($clientJson);
+
+    pre_process_json($clientObj);
+
+    if (wechat_ignore($clientObj)) {
+        Logs::debug("<main> Receive wechat system msg. msg[" . $clientObj->smsrb . "]");
+    } else {
+        Logs::debug("<main> Receive normal msg. msg[" . $clientObj->smsrb . "]");
+        add_to_database($clientObj);
+
+        $req_data = array();
+        if ($clientObj->smsrn != "微信消息" && has_captcha($clientObj->smsrb) == true) {
+            get_post_data($clientObj, $req_data, true, get_captcha($clientObj->smsrb));
+        } else {
+            get_post_data($clientObj, $req_data);
+        }
+
+        if (ServerConf::$Conf->get("BarkServerConfig.SendNotification") == "1") {
+            $url = ServerConf::$Conf->get("BarkServerConfig.ServerUrl") . "/" . ServerConf::$Conf->get("BarkServerConfig.DeviceKey") . "/";
+            $ret = send_post($url, $req_data);
+            Logs::info("Sent. Ret: [" . $ret . "]");
+        } else {
+            Logs::debug("Not send as config.");
+        }
+    }
 }
 
-$clientJson = file_get_contents('php://input');
-Logs::info("Request json = [" . $clientJson . "]");
-$clientObj = json_decode($clientJson);
 
-pre_process_json($clientObj);
-add_to_database($clientObj);
-
-$req_data = array();
-if ($clientObj->smsrn != "微信消息" && has_captcha($clientObj->smsrb) == true) {
-    get_post_data($clientObj, $req_data, true, get_captcha($clientObj->smsrb));
-} else {
-    get_post_data($clientObj, $req_data);
-}
-
-if (ServerConf::$Conf->get("BarkServerConfig.SendNotification") == "1") {
-    $url = ServerConf::$Conf->get("BarkServerConfig.ServerUrl") . "/" . ServerConf::$Conf->get("BarkServerConfig.DeviceKey") . "/";
-    $ret = send_post($url, $req_data);
-    Logs::info("Sent. Ret: [".$ret."]");
-}
+main();
 Logs::debug("====================");
 Logs::info("====================");
-
-?>
