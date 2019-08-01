@@ -14,7 +14,21 @@ if (!ServerConf::init($path)) {
     throw new Exception("Init config module failed!\n");
 }
 
-// 处理微信消息，转换为短信格式  // TODO: 过滤掉一些无用的信息，如微信提示
+// 加载部分配置
+$TestMsgSender = explode(",", ServerConf::$Conf->get("BarkServerConfig.TestMsgSender"));
+$WechatIgnore = explode(",", ServerConf::$Conf->get("BarkServerConfig.WechatIgnore"));
+for ($idx = 0; $idx < count($WechatIgnore); $idx++) {
+    $keyWord_1 = str_replace("·", ",", $WechatIgnore[$idx]);  // 替换回","
+    $keyWord_1 = str_replace("【", "(", $keyWord_1);  // 替换回"("
+    $keyWord_1 = str_replace("】", ")", $keyWord_1);  // 替换回")"
+    $WechatIgnore[$idx] = $keyWord_1;
+}
+
+/**
+ * 处理微信消息，过滤掉一些无用的信息，如微信系统提示，并转换为短信格式
+ * @param object &$jsonObj 未处理的客户端消息对象
+ * @return 无返回值
+ */
 function pre_process_json(&$jsonObj)
 {
     if ($jsonObj->smsrn == "" && $jsonObj->smsrf == "" && starts_with($jsonObj->smsrb, "【微信】")) {  // 来自微信的消息
@@ -40,16 +54,18 @@ function pre_process_json(&$jsonObj)
     }
 }
 
-// 判断是否为屏蔽的微信系统信息
-function wechat_ignore($jsonObj)
+/**
+ * 判断是否为屏蔽的微信系统信息
+ * @param object $jsonObj 经过 pre_process_json() 函数预处理的客户端消息对象
+ * @return 无返回值
+ */
+function is_wechat_ignore($jsonObj)
 {
-    $wechatIgnore = explode(",", ServerConf::$Conf->get("BarkServerConfig.WechatIgnore"));
+    global $WechatIgnore;
     Logs::debug("<wechat_ignore> name[" . $jsonObj->smsrn . "] sender[" . $jsonObj->smsrf . "] message[" . $jsonObj->smsrb . "]");
 
     if ($jsonObj->smsrn == "微信消息" && $jsonObj->smsrf == "微信") {  // 经过 pre_process_json() 处理后的微信系统消息特征
-        // Logs::debug("<wechat_ignore> Match step one!");
-        if (in_array($jsonObj->smsrb, $wechatIgnore)) {
-            // Logs::debug("<wechat_ignore> Wechat system msg matched.");
+        if (in_array($jsonObj->smsrb, $WechatIgnore)) {
             return true;
         }
     }
@@ -60,12 +76,12 @@ function wechat_ignore($jsonObj)
 function add_to_database($jsonObj)
 {
     $sqlConfig = ServerConf::$Conf->get("BarkSqlConfig");
-    $testMsgSender = explode(",", ServerConf::$Conf->get("BarkServerConfig.TestMsgSender"));
+    global $TestMsgSender;
 
     $conn = get_mysql_conn($sqlConfig["Host"], $sqlConfig["Username"], $sqlConfig["Password"], $sqlConfig["DBname"]);
     if ($conn) {
         $tableName = "";
-        if (in_array($jsonObj->smsrf, $testMsgSender)) {  // 测试消息写入测试库
+        if (in_array($jsonObj->smsrf, $TestMsgSender)) {  // 测试消息写入测试库
             Logs::debug("收到测试消息，写入测试库！[" . $jsonObj->smsrf . "]");
             $tableName = $sqlConfig["TBNameT"];
         } else {
@@ -153,11 +169,14 @@ function main()
 {
     $clientJson = file_get_contents('php://input');
     Logs::info("Request json = [" . $clientJson . "]");
+    if ($clientJson == "") {
+        Logs::debug("<main()> Empty request.");
+        return;
+    }
     $clientObj = json_decode($clientJson);
 
     pre_process_json($clientObj);
-
-    if (wechat_ignore($clientObj)) {
+    if (is_wechat_ignore($clientObj)) {
         Logs::debug("<main> Receive wechat system msg. msg[" . $clientObj->smsrb . "]");
     } else {
         Logs::debug("<main> Receive normal msg. msg[" . $clientObj->smsrb . "]");
@@ -180,7 +199,7 @@ function main()
     }
 }
 
-
 main();
 Logs::debug("====================");
 Logs::info("====================");
+?>
