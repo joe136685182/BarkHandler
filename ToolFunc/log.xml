@@ -19,4 +19,23 @@
             <LogFile>./logs/php_bark_handler__error.log</LogFile>
         </Error>
     </BarkServer>
+    <Test>
+        <Debug>
+            <LevelTag>DEBUG</LevelTag>
+            <Mode>1</Mode>
+            <LogFile>./logs/test/php_test__debug.log</LogFile>
+        </Debug>
+
+        <Info>
+            <LevelTag>INFO</LevelTag>
+            <Mode>1</Mode>
+            <LogFile>./logs/test/php_test__info.log</LogFile>
+        </Info>
+
+        <Error>
+            <LevelTag>ERROR</LevelTag>
+            <Mode>1</Mode>
+            <LogFile>./logs/test/php_test__error.log</LogFile>
+        </Error>
+    </Test>
 </log>

@@ -31,8 +31,10 @@ for ($idx = 0; $idx < count($WechatIgnore); $idx++) {
  */
 function pre_process_json(&$jsonObj)
 {
-    if ($jsonObj->smsrn == "" && $jsonObj->smsrf == "" && starts_with($jsonObj->smsrb, "【微信】")) {  // 来自微信的消息
+    # Logs::debug("<pre_process_json> raw_msg[".$jsonObj->smsrb."]");
+    if ($jsonObj->smsrn == "" && $jsonObj->smsrf == "【应用消息】" && starts_with($jsonObj->smsrb, "【微信】")) {  // 来自微信的消息
         $totalMsg = mb_substr($jsonObj->smsrb, mb_strlen("【微信】", 'utf8'));  // 截掉"【微信】"
+        # Logs::debug("<pre_process_json> step 1 msg[".$totalMsg."]");
 
         // 如果找不到目标字符(串)，则mb_strpos()会返回空字符串
         $pos_1 = mb_strpos($totalMsg, "：");  // 微信系统消息的发件人和消息内容分隔符是全角冒号
@@ -48,6 +50,7 @@ function pre_process_json(&$jsonObj)
             $sender = mb_substr($totalMsg, 0, $pos_2);
             $msg = mb_substr($totalMsg, ($pos_2 + 2), (mb_strlen($totalMsg) - $pos_2 - 2));
         }
+        # Logs::debug("<pre_process_json> step 1 msg[".$totalMsg."]");
         $jsonObj->smsrn = "微信消息";
         $jsonObj->smsrf = $sender;
         $jsonObj->smsrb = $msg;
@@ -146,12 +149,19 @@ function get_post_data($reqObj, &$reqData, $hasCaptcha = false, $captcha = "")
     Logs::debug("<get_post_data> hasCaptcha[" . $hasCaptcha . "] captcha[" . $captcha . "]");
     $msg = "收件人: " . $reqObj->smsrk . "\n消息内容: " . $reqObj->smsrb . "\n时间: " . $reqObj->smsrt;
 
-    if ($reqObj->smsrn == "") {
-        if ($reqObj->smsrf != "") {
-            $reqData["title"] = $reqObj->smsrf;  // 若无发件人名称且有发件人号码，则标题为发件人号码
-        }  // 若无发件人名称及号码，则无标题
+    if ($reqObj->smsrh == "") {
+        if ($reqObj->smsrn == "") {
+            if ($reqObj->smsrf != "") {
+                $reqData["title"] = $reqObj->smsrf;  // 若无发件人名称且有发件人号码，则标题为发件人号码
+            }  // 若无发件人名称及号码，则无标题
+        } else {
+            $reqData["title"] = $reqObj->smsrn;  // 若有发件人名称，则标题为发件人号码
+            if ($reqObj->smsrf != "") {  // 若有发件人号码，则在正文中插入该项内容
+                $msg = "发件人号码: " . $reqObj->smsrf . "\n" . $msg;
+            }
+        }
     } else {
-        $reqData["title"] = $reqObj->smsrn;  // 若有发件人名称，则标题为发件人号码
+        $reqData["title"] = $reqObj->smsrh;  // 若有消息，则标题为消息标题
         if ($reqObj->smsrf != "") {  // 若有发件人号码，则在正文中插入该项内容
             $msg = "发件人号码: " . $reqObj->smsrf . "\n" . $msg;
         }
