@@ -57,7 +57,7 @@ class Settings_XML extends Settings
     }
 
     /**
-     * $file: 最好使用绝u第路径，否则会找不到文件
+     * $file: 最好使用绝对路径，否则会找不到文件
      */
     function load($file)
     {
